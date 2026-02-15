@@ -215,7 +215,7 @@ if not st.session_state.game_active and st.session_state.game_result is None:
     **⚡ МЕХАНИКА:**
     1.  **Кубышка (Резервы):** Профицит копится, дефицит тратит резервы. Не уйдите в минус 50 млрд!
     2.  **Налоги:** >30% быстро убивают доверие. <30% растят инфляцию.
-    3.  **Щедрость:** Если вы тратите на сферы больше минимума, доверие растет! Чем больше денег даете людям, тем они счастливее.
+    3.  **Щедрость:** Если вы тратите на сферы больше минимума, доверие медленно растет. Но осторожно: большие расходы разгоняют инфляцию!
     """)
     if st.button("ПРИНЯТЬ ВЫЗОВ", type="primary", use_container_width=True):
         start_game()
@@ -263,8 +263,10 @@ else:
         'transport': exp_transport, 'security': exp_security, 
         'education': exp_education
     }
+    
+    total_spending = sum(current_stats.values())
 
-    # --- ЛОГИКА ДОВЕРИЯ (СУММАТОР) ---
+    # --- ЛОГИКА ДОВЕРИЯ И ИНФЛЯЦИИ ---
     trust_change = 0.0
     
     # 1. Налоги
@@ -281,14 +283,20 @@ else:
         if st.session_state.inflation > 0.5:
             st.session_state.inflation -= 0.1
 
-    # 2. Инфляция
+    # 2. Инфляция (Влияние на доверие)
     inflation_warning = False
     if st.session_state.inflation > 10.0:
         inflation_penalty = (st.session_state.inflation - 10.0) * 0.15
         trust_change -= inflation_penalty
         inflation_warning = True
+    
+    # 3. Инфляция от расходов (НОВОЕ!)
+    # Если расходы больше базовых 60 млрд, инфляция начинает расти
+    if total_spending > 60:
+        spending_inflation = (total_spending - 60) * 0.001 # 0.1% инфляции за каждые 100 млрд в сек
+        st.session_state.inflation += spending_inflation
 
-    # 3. ЛОГИКА РАСХОДОВ (ХАЛАТНОСТЬ VS ЩЕДРОСТЬ)
+    # 4. ЛОГИКА РАСХОДОВ (ХАЛАТНОСТЬ VS ЩЕДРОСТЬ)
     st.session_state.active_warnings = []
     
     # Функция для расчета влияния бюджета (штраф или бонус)
@@ -297,10 +305,13 @@ else:
             # Штраф за халатность
             st.session_state.active_warnings.append(warning_text)
             return -random.uniform(0.2, 0.5) # Штраф
-        elif value > min_val:
-            # Бонус за щедрость (чем больше превышение, тем больше бонус)
-            excess = value - min_val
-            return excess * 0.015 # Коэффициент щедрости
+        elif value > min_val + 2.0: # Только если заметно больше минимума
+            # Бонус за щедрость (СНИЖЕН В 3 РАЗА: был 0.015, стал 0.005)
+            excess = value - (min_val + 2.0)
+            return excess * 0.005 
+        elif value >= min_val:
+             # Если стоит на минимуме или чуть выше - нет бонуса, но есть крошечный минус (стагнация)
+             return -0.05
         return 0
 
     # Применяем логику ко всем сферам
@@ -311,8 +322,10 @@ else:
         if st.session_state.revenue_shock_factor > 0.6: 
             st.session_state.revenue_shock_factor -= 0.0015
         st.session_state.active_warnings.append(f"🏥 ЭПИДЕМИЯ! (Расходы < 19 млрд)")
+    elif exp_social > 22.0: # Запас +3 млрд для бонуса
+        trust_change += (exp_social - 22.0) * 0.005 
     else:
-        trust_change += (exp_social - 19.0) * 0.02 # Медицина ценится выше
+        trust_change -= 0.05 # Стагнация
 
     # Транспорт (Мин 10)
     trust_change += calculate_budget_impact(exp_transport, 10.0, "🚆 ТРАНСПОРТНЫЙ КОЛЛАПС!")
@@ -382,8 +395,7 @@ else:
     # --- ФИНАНСЫ ---
     income_rate = 10 + (tax_rate * 2.5) 
     current_revenue = income_rate * st.session_state.revenue_shock_factor
-    current_spending = sum(current_stats.values())
-    balance_rate = current_revenue - current_spending
+    balance_rate = current_revenue - total_spending
     st.session_state.national_reserves += balance_rate / 5.0
     
     # --- ОБНОВЛЕНИЕ ДОВЕРИЯ ---
@@ -454,6 +466,8 @@ else:
             st.caption("⚠️ ОПАСНОСТЬ! Съедает доверие")
         elif tax_rate < 30:
             st.caption("📈 Растет (Низкий налог)")
+        elif total_spending > 80:
+             st.caption("📈 Растет (Высокие расходы)")
 
     with col_trust:
         trust_color = get_color_for_trust(st.session_state.trust_score)
@@ -471,11 +485,11 @@ else:
         st.metric("Гос. Кубышка", f"{st.session_state.national_reserves:.1f} млрд", delta=f"{balance_rate:.1f} / сек", delta_color=reserves_color)
         
         fig_bar = go.Figure(go.Bar(
-            x=[current_spending, current_revenue],
+            x=[total_spending, revenue],
             y=['Расходы', 'Доходы'],
             orientation='h',
             marker_color=['#c0392b', '#27ae60'],
-            text=[f"{current_spending:.1f}", f"{current_revenue:.1f}"],
+            text=[f"{total_spending:.1f}", f"{revenue:.1f}"],
             textposition='auto'
         ))
         fig_bar.update_layout(height=100, margin={"r":0,"t":0,"l":0,"b":0}, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
