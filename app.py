@@ -177,7 +177,7 @@ def start_game():
     st.session_state.extra_budget = 0
     st.session_state.event_solved_flag = False
     st.session_state.event_history = []
-    st.session_state.inflation = 1.5
+    st.session_state.inflation = 1.0
     st.session_state.trust_score = 60.0
     st.session_state.national_reserves = 10.0
 
@@ -262,25 +262,25 @@ else:
         high_tax_warning = True
     elif tax_rate < 30:
         trust_change += 0.2 
-        inflation_growth = (30 - tax_rate) * 0.008 
+        inflation_growth = (30 - tax_rate) * 0.011 # Увеличили рост инфляции
         st.session_state.inflation += inflation_growth
     elif tax_rate == 30:
-        if st.session_state.inflation > 0.5:
-            st.session_state.inflation -= 0.1
+        pass # Идеальный налог не влияет на инфляцию
 
     # 2. Влияние Процентной Ставки
     if interest_rate > 2.0:
         st.session_state.inflation -= (interest_rate - 2.0) * 0.08
         trust_change -= (interest_rate - 2.0) * 0.05 
     elif interest_rate < 2.0:
-        st.session_state.inflation += (2.0 - interest_rate) * 0.05
+        st.session_state.inflation += (2.0 - interest_rate) * 0.07 # Быстрее растет инфляция
 
     # 3. Инфляция от расходов
     if total_spending > 60:
-        st.session_state.inflation += (total_spending - 60) * 0.003
+        st.session_state.inflation += (total_spending - 60) * 0.004
 
     if st.session_state.inflation > 0.5:
-        st.session_state.inflation -= 0.01
+        # Убрали естественное снижение
+        pass
 
     # 4. Инфляция и Доверие (Порог 7%)
     inflation_warning = False
@@ -390,27 +390,26 @@ else:
 
     st.session_state.national_reserves += balance_rate / 5.0
     
-    # --- ОБНОВЛЕНИЕ ДОВЕРИЯ ---
-    trust_change -= 0.1 # Энтропия
+    # --- ОБНОВЛЕНИЕ ---
+    trust_change -= 0.1
     st.session_state.trust_score += trust_change
     st.session_state.trust_score = max(min(st.session_state.trust_score, 100), 0)
-    st.session_state.inflation = max(0, st.session_state.inflation)
+    st.session_state.inflation = max(0, st.session_state.inflation) 
 
-    # --- GAME OVER ---
     if st.session_state.trust_score < 30:
         st.session_state.game_result = "lose"
         st.session_state.fail_reason = "Революция! Доверие упало ниже 30%."
         st.rerun()
     if st.session_state.national_reserves < -50: 
         st.session_state.game_result = "lose"
-        st.session_state.fail_reason = "Государство банкрот! Долг превысил 50 млрд."
+        st.session_state.fail_reason = "Дефолт! Долг > 50 млрд."
         st.rerun()
     if time_left <= 0:
         st.session_state.final_trust = st.session_state.trust_score
         st.session_state.game_result = "win"
         st.rerun()
 
-    # --- ОТРИСОВКА ИНТЕРФЕЙСА ---
+    # --- ИНТЕРФЕЙС ---
     c1, c2 = st.columns([1, 2])
     with c1:
         st.markdown(f'<div class="timer-box">🗓 День {elapsed_time*2} / 365</div>', unsafe_allow_html=True)
@@ -419,31 +418,18 @@ else:
         if unique_warnings:
             for w in unique_warnings[:3]: 
                 st.markdown(f"<div class='critical-warning'>{w}</div>", unsafe_allow_html=True)
-        if high_tax_warning: st.markdown(f"<div class='critical-warning' style='border-color:orange; background:#fef5e7; color:#d35400'>🔥 ВЫСОКИЙ НАЛОГ! Доверие падает!</div>", unsafe_allow_html=True)
+        if high_tax_warning: st.markdown(f"<div class='critical-warning' style='border-color:orange; background:#fef5e7; color:#d35400'>🔥 НАЛОГИ!</div>", unsafe_allow_html=True)
         if debt_service_cost > 0.1: st.markdown(f"<div class='critical-warning' style='border-color:black; background:#ecf0f1; color:black'>💸 ПЛАТА ПО ДОЛГАМ: -{debt_service_cost*5:.1f} млрд/сек</div>", unsafe_allow_html=True)
 
     with c2:
         if st.session_state.current_event:
             evt = st.session_state.current_event
-            if evt['type'] == 'bad':
-                st.markdown(f"""
-                <div class="game-alert-bad">
-                🚨 {evt['title']}<br>
-                <span style="font-size:16px">{evt['desc']}</span><br>
-                <div style="margin-top:5px; background:white; color:black; border-radius:5px; display:inline-block; padding:2px 8px;">
-                {status_msg}
-                </div>
-                </div>
-                """, unsafe_allow_html=True)
-            elif evt['type'] == 'good':
-                st.markdown(f"""
-                <div class="game-alert-good">
-                ✨ {evt['title']}<br>
-                <span style="font-size:16px">{evt['desc']}</span>
-                </div>
-                """, unsafe_allow_html=True)
+            color_cls = "game-alert-bad" if evt['type'] == 'bad' else "game-alert-good"
+            st.markdown(f"""<div class="{color_cls}">
+            {evt['title']}<br><span style="font-size:16px">{evt['desc']}</span><br>
+            </div>""", unsafe_allow_html=True)
         else:
-            st.info("В стране спокойно...")
+            st.info("Ситуация стабильная...")
 
     st.divider()
 
