@@ -122,29 +122,36 @@ if 'event_solved_flag' not in st.session_state:
 if 'active_warnings' not in st.session_state:
     st.session_state.active_warnings = []
 if 'negligence_recovery' not in st.session_state:
-    st.session_state.negligence_recovery = 0 # Для постепенного восстановления
+    st.session_state.negligence_recovery = 0 
+# НОВОЕ: История событий для уникальности
+if 'event_history' not in st.session_state:
+    st.session_state.event_history = []
 
-# --- 3. ДАННЫЕ СОБЫТИЙ (Швейцарская специфика) ---
+# --- 3. ДАННЫЕ СОБЫТИЙ ---
 BAD_EVENTS = [
-    # Социалка (Самые частые)
+    # Социалка (Частые, вес высокий)
     {"title": "🦠 ВСПЫШКА ГРИППА!", "desc": "Больницы переполнены. Соц. обеспечение > 42 млрд!", "condition": lambda s: s['social'] >= 42, "type": "bad", "weight": 5},
     {"title": "👵 ПЕНСИОННЫЙ КРИЗИС!", "desc": "Фонд AHV пуст. Соц. обеспечение > 45 млрд!", "condition": lambda s: s['social'] >= 45, "type": "bad", "weight": 5},
     {"title": "🏥 РОСТ СТРАХОВОК!", "desc": "Население требует субсидий. Соц. обеспечение > 38 млрд!", "condition": lambda s: s['social'] >= 38, "type": "bad", "weight": 4},
     {"title": "👶 ДЕФИЦИТ ДЕТСАДОВ!", "desc": "Родители бастуют. Соц. обеспечение > 35 млрд!", "condition": lambda s: s['social'] >= 35, "type": "bad", "weight": 3},
+    {"title": "🧪 ДЕФИЦИТ ЛЕКАРСТВ!", "desc": "Сбой поставок. Соц. обеспечение > 40 млрд!", "condition": lambda s: s['social'] >= 40, "type": "bad", "weight": 4},
 
-    # Транспорт (Частые)
+    # Транспорт (Частые, вес высокий)
     {"title": "🚆 СБОЙ SBB!", "desc": "Поезда встали по всей стране. Транспорт > 18 млрд!", "condition": lambda s: s['transport'] >= 18, "type": "bad", "weight": 4},
     {"title": "❄️ СНЕГ В ГОТТАРДЕ!", "desc": "Тоннель заблокирован. Транспорт > 20 млрд!", "condition": lambda s: s['transport'] >= 20, "type": "bad", "weight": 4},
     {"title": "🚧 РЕМОНТ АВТОБАНОВ!", "desc": "Пробки на A1. Транспорт > 16 млрд!", "condition": lambda s: s['transport'] >= 16, "type": "bad", "weight": 3},
+    {"title": "✈️ ЗАБАСТОВКА SWISS!", "desc": "Аэропорт Цюриха парализован. Транспорт > 19 млрд!", "condition": lambda s: s['transport'] >= 19, "type": "bad", "weight": 3},
     
     # Госуправление / Экономика
     {"title": "📉 СИЛЬНЫЙ ФРАНК!", "desc": "Экспорт падает. Поддержите экономику (Гос > 12 млрд)!", "condition": lambda s: s['admin'] >= 12, "type": "bad", "weight": 3},
     {"title": "💻 КИБЕРАТАКА!", "desc": "Взлом федеральных серверов. Гос > 14 млрд!", "condition": lambda s: s['admin'] >= 14, "type": "bad", "weight": 2},
+    {"title": "🏦 СКАНДАЛ В БАНКЕ!", "desc": "Спасение Credit Swiss. Гос > 15 млрд!", "condition": lambda s: s['admin'] >= 15, "type": "bad", "weight": 2},
     
     # Образование
     {"title": "🎓 ЗАБАСТОВКА ETH!", "desc": "Студенты требуют грантов. Образование > 16 млрд!", "condition": lambda s: s['education'] >= 16, "type": "bad", "weight": 3},
+    {"title": "🧠 УТЕЧКА МОЗГОВ!", "desc": "Ученые уезжают в США. Образование > 18 млрд!", "condition": lambda s: s['education'] >= 18, "type": "bad", "weight": 2},
 
-    # Оборона (Редкие - 3%)
+    # Оборона (Редкие - маленький вес)
     {"title": "🪖 МОДЕРНИЗАЦИЯ АРМИИ!", "desc": "Нужно обновить истребители. Оборона > 12 млрд!", "condition": lambda s: s['security'] >= 12, "type": "bad", "weight": 1},
 ]
 
@@ -154,18 +161,42 @@ GOOD_EVENTS = [
     {"title": "🏔️ ТУРИСТИЧЕСКИЙ БУМ!", "desc": "Все едут в Альпы. (+6 млрд в бюджет)", "effect": "money", "val": 6, "type": "good"},
     {"title": "🍫 РЕКОРД ЭКСПОРТА!", "desc": "Сверхприбыль Nestlé и Lindt. (+4 млрд в бюджет)", "effect": "money", "val": 4, "type": "good"},
     {"title": "☮️ ДАВОССКИЙ ФОРУМ!", "desc": "Успешные переговоры. (+5% доверия)", "effect": "trust", "val": 5, "type": "good"},
+    {"title": "⌚ ЧАСОВОЙ ГИГАНТ!", "desc": "Rolex заплатил рекордные налоги. (+5 млрд)", "effect": "money", "val": 5, "type": "good"},
+    {"title": "🔋 ЗЕЛЕНАЯ ЭНЕРГИЯ!", "desc": "Новые ГЭС эффективнее. (+3 млрд)", "effect": "money", "val": 3, "type": "good"},
 ]
 
-# Функция выбора события с учетом весов (чтобы оборона выпадала редко)
-def get_random_bad_event():
-    total_weight = sum(evt['weight'] for evt in BAD_EVENTS)
-    r = random.uniform(0, total_weight)
-    current_weight = 0
-    for evt in BAD_EVENTS:
-        current_weight += evt['weight']
-        if r <= current_weight:
-            return evt
-    return BAD_EVENTS[0]
+# Функция выбора события с учетом истории и весов
+def get_next_event(event_type):
+    # 1. Выбираем пул событий
+    pool = BAD_EVENTS if event_type == "bad" else GOOD_EVENTS
+    
+    # 2. Фильтруем: исключаем те, что были в последних 4 ходах
+    recent_history = st.session_state.event_history[-4:]
+    available_events = [e for e in pool if e['title'] not in recent_history]
+    
+    # Если вдруг все доступные события закончились (редко, но бывает), берем весь пул
+    if not available_events:
+        available_events = pool
+
+    # 3. Выбираем из доступных
+    if event_type == "bad":
+        # Для плохих используем веса
+        total_weight = sum(evt['weight'] for evt in available_events)
+        r = random.uniform(0, total_weight)
+        current_weight = 0
+        selected = available_events[0]
+        for evt in available_events:
+            current_weight += evt['weight']
+            if r <= current_weight:
+                selected = evt
+                break
+    else:
+        # Для хороших - просто рандом
+        selected = random.choice(available_events)
+    
+    # 4. Записываем в историю
+    st.session_state.event_history.append(selected['title'])
+    return selected
 
 # --- 4. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
 def start_game():
@@ -179,7 +210,8 @@ def start_game():
     st.session_state.bonus_trust = 0
     st.session_state.extra_budget = 0
     st.session_state.event_solved_flag = False
-    st.session_state.negligence_recovery = 0 # Сброс восстановления
+    st.session_state.negligence_recovery = 0
+    st.session_state.event_history = [] # Очищаем историю
 
 def get_color_for_trust(value):
     if value < 30: return "#e74c3c" 
@@ -254,8 +286,6 @@ else:
     # --- ЛОГИКА "ХАЛАТНОСТИ" (С восстановлением) ---
     st.session_state.active_warnings = []
     current_penalty_increment = 0
-    
-    # Проверка условий и накопление штрафа
     is_negligent = False
     
     # 1. Медицина (< 19.0)
@@ -294,9 +324,8 @@ else:
     if is_negligent:
         st.session_state.penalties += current_penalty_increment
     else:
-        # Если проблем нет, постепенно снижаем накопленные штрафы (восстановление доверия)
         if st.session_state.penalties > 0:
-            recovery_rate = 0.15 # Скорость восстановления
+            recovery_rate = 0.15 
             st.session_state.penalties = max(0, st.session_state.penalties - recovery_rate)
 
     # --- ОБРАБОТКА СОБЫТИЙ ---
@@ -338,14 +367,14 @@ else:
     # ГЕНЕРАЦИЯ НОВОГО (каждые 9-16 сек)
     elif time_since_last > random.randint(9, 16):
         if random.random() < 0.73:
-            # Используем функцию с весами для выбора плохого события
-            st.session_state.current_event = get_random_bad_event()
+            # Используем новую функцию с проверкой уникальности
+            st.session_state.current_event = get_next_event("bad")
             st.session_state.event_solved_flag = False
         else:
-            good_evt = random.choice(GOOD_EVENTS)
-            st.session_state.current_event = good_evt
+            st.session_state.current_event = get_next_event("good")
             st.session_state.event_solved_flag = False
             
+            good_evt = st.session_state.current_event
             if good_evt['effect'] == 'trust':
                 st.session_state.bonus_trust += good_evt['val']
                 st.toast(f"Хорошие новости! +{good_evt['val']}%", icon="🎉")
@@ -364,10 +393,7 @@ else:
     
     # --- ДОВЕРИЕ ---
     base_trust = 60 
-    
-    # Штраф за дефицит
     if balance < 0: base_trust -= abs(balance) * 0.8
-    
     final_trust = base_trust - st.session_state.penalties - entropy_loss + st.session_state.bonus_trust
     final_trust = max(min(int(final_trust), 100), 0)
 
