@@ -171,6 +171,7 @@ def start_game():
     st.session_state.game_active = True
     st.session_state.start_time = time.time()
     st.session_state.last_event_time = time.time()
+    st.session_state.penalties = 0
     st.session_state.current_event = None
     st.session_state.game_result = None
     st.session_state.revenue_shock_factor = 1.0
@@ -262,31 +263,28 @@ else:
         high_tax_warning = True
     elif tax_rate < 30:
         trust_change += 0.2 
-        inflation_growth = (30 - tax_rate) * 0.00715 # Снижено на 35%
+        inflation_growth = (30 - tax_rate) * 0.011 
         st.session_state.inflation += inflation_growth
     elif tax_rate == 30:
-        pass # Идеальный налог не влияет на инфляцию
+        pass 
 
     # 2. Влияние Процентной Ставки
     if interest_rate > 2.0:
-        st.session_state.inflation -= (interest_rate - 2.0) * 0.052 # Снижено на 35% (было 0.08)
+        st.session_state.inflation -= (interest_rate - 2.0) * 0.08
         trust_change -= (interest_rate - 2.0) * 0.05 
     elif interest_rate < 2.0:
-        st.session_state.inflation += (2.0 - interest_rate) * 0.0455 # Снижено на 35% (было 0.07)
+        st.session_state.inflation += (2.0 - interest_rate) * 0.07 
 
     # 3. Инфляция от расходов
     if total_spending > 60:
-        st.session_state.inflation += (total_spending - 60) * 0.0026 # Снижено на 35% (было 0.004)
-
-    if st.session_state.inflation > 0.5:
-        # Убрали естественное снижение
-        pass
+        st.session_state.inflation += (total_spending - 60) * 0.004
 
     # 4. Инфляция и Доверие (Порог 7%)
     inflation_warning = False
     if st.session_state.inflation > 7.0:
-        # Ускоренный рост инфляции, если она уже высокая
-        st.session_state.inflation *= 1.2  
+        # Убрали экспоненциальное умножение (*= 1.4), заменили на фиксированную добавку
+        # Это предотвращает мгновенный взлет в космос
+        st.session_state.inflation += 0.2  
         
         inflation_penalty = (st.session_state.inflation - 7.0) * 0.2
         trust_change -= inflation_penalty
