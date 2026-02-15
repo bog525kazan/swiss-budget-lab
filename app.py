@@ -171,7 +171,6 @@ def start_game():
     st.session_state.game_active = True
     st.session_state.start_time = time.time()
     st.session_state.last_event_time = time.time()
-    st.session_state.penalties = 0
     st.session_state.current_event = None
     st.session_state.game_result = None
     st.session_state.revenue_shock_factor = 1.0
@@ -199,14 +198,11 @@ if not st.session_state.game_active and st.session_state.game_result is None:
     Вам предстоит на своей шкуре ощутить этот жесткий баланс: когда денег не хватает, кризисы бьют без предупреждения, а население требует заботы.
     
     ---
-    **⚡ НОВАЯ МЕХАНИКА: СТАВКА ЦБ И ИНФЛЯЦИЯ**
-    
-    1.  **📊 Процентная ставка (Rate):**
-        * **Повышаете ставку:** Инфляция падает, но растет стоимость долгов и падает доверие (дорогая ипотека!).
-        * **Понижаете ставку:** Экономика растет, но Инфляция взлетает!
-    2.  **💰 Налоги:** * Высокие налоги быстро убивают доверие. Низкие налоги разгоняют инфляцию.
-    3.  **💸 Кубышка:** Если у вас долг (минус в резервах), вы платите проценты каждую секунду! Не дайте долгу сожрать бюджет.
-    4. **📈 Инфляция:** Если инфляция выше 7%, доверие начинает падать!
+    **⚡ МЕХАНИКА:**
+    1.  **Кубышка (Резервы):** Профицит копится, дефицит тратит резервы. Не уйдите в минус 50 млрд!
+    2.  **Налоги:** >30% быстро убивают доверие. <30% растят инфляцию.
+    3.  **Щедрость:** Если вы тратите на сферы больше минимума, доверие медленно растет. Но осторожно: большие расходы разгоняют инфляцию!
+    4.  **Ставка ЦБ и Инфляция:** Высокая ставка снижает инфляцию, но повышает долги. Инфляция выше 7% начинает снижать доверие!
     """)
     if st.button("ПРИНЯТЬ ВЫЗОВ", type="primary", use_container_width=True):
         start_game()
@@ -234,9 +230,7 @@ else:
 
     # --- САЙДБАР (УПРАВЛЕНИЕ) ---
     st.sidebar.markdown("---")
-    st.sidebar.header("🏦 Центробанк и Налоги")
-    
-    # НОВОЕ: Процентная ставка
+    st.sidebar.header("💰 Доходы (Налоги) и Ставка ЦБ")
     interest_rate = st.sidebar.slider("Ключевая ставка ЦБ (%)", 0.0, 15.0, 1.5, 0.5)
     tax_rate = st.sidebar.slider("Ставка налога (%)", 0, 100, 30, 1)
     
@@ -268,7 +262,7 @@ else:
         high_tax_warning = True
     elif tax_rate < 30:
         trust_change += 0.2 
-        inflation_growth = (30 - tax_rate) * 0.008 # Увеличили рост инфляции
+        inflation_growth = (30 - tax_rate) * 0.008 
         st.session_state.inflation += inflation_growth
     elif tax_rate == 30:
         if st.session_state.inflation > 0.5:
@@ -276,28 +270,31 @@ else:
 
     # 2. Влияние Процентной Ставки
     if interest_rate > 2.0:
-        st.session_state.inflation -= (interest_rate - 2.0) * 0.08 # Сильнее сбиваем инфляцию
+        st.session_state.inflation -= (interest_rate - 2.0) * 0.08
         trust_change -= (interest_rate - 2.0) * 0.05 
     elif interest_rate < 2.0:
-        st.session_state.inflation += (2.0 - interest_rate) * 0.05 # Быстрее растет инфляция
+        st.session_state.inflation += (2.0 - interest_rate) * 0.05
 
     # 3. Инфляция от расходов
     if total_spending > 60:
-        st.session_state.inflation += (total_spending - 60) * 0.003 # Увеличили влияние расходов
+        st.session_state.inflation += (total_spending - 60) * 0.003
 
     if st.session_state.inflation > 0.5:
         st.session_state.inflation -= 0.01
 
     # 4. Инфляция и Доверие (Порог 7%)
     inflation_warning = False
-    if st.session_state.inflation > 7.0: # Порог снижен до 7%
+    if st.session_state.inflation > 7.0:
+        # Ускоренный рост инфляции, если она уже высокая
+        st.session_state.inflation *= 1.4  
+        
         inflation_penalty = (st.session_state.inflation - 7.0) * 0.2
         trust_change -= inflation_penalty
         inflation_warning = True
-        st.session_state.active_warnings.append(f"🔥 ВЫСОКАЯ ИНФЛЯЦИЯ! ({st.session_state.inflation:.1f}%)")
-
-    # 5. ЛОГИКА РАСХОДОВ
-    st.session_state.active_warnings = [] # Сброс, потом заполняем заново
+        
+    # 5. ЛОГИКА РАСХОДОВ (ХАЛАТНОСТЬ VS ЩЕДРОСТЬ)
+    st.session_state.active_warnings = []
+    
     if inflation_warning:
          st.session_state.active_warnings.append(f"🔥 ВЫСОКАЯ ИНФЛЯЦИЯ! ({st.session_state.inflation:.1f}%)")
 
@@ -393,26 +390,27 @@ else:
 
     st.session_state.national_reserves += balance_rate / 5.0
     
-    # --- ОБНОВЛЕНИЕ ---
-    trust_change -= 0.1
+    # --- ОБНОВЛЕНИЕ ДОВЕРИЯ ---
+    trust_change -= 0.1 # Энтропия
     st.session_state.trust_score += trust_change
     st.session_state.trust_score = max(min(st.session_state.trust_score, 100), 0)
-    st.session_state.inflation = max(0, st.session_state.inflation) 
+    st.session_state.inflation = max(0, st.session_state.inflation)
 
+    # --- GAME OVER ---
     if st.session_state.trust_score < 30:
         st.session_state.game_result = "lose"
-        st.session_state.fail_reason = "Революция! Доверие < 30%."
+        st.session_state.fail_reason = "Революция! Доверие упало ниже 30%."
         st.rerun()
     if st.session_state.national_reserves < -50: 
         st.session_state.game_result = "lose"
-        st.session_state.fail_reason = "Дефолт! Долг > 50 млрд."
+        st.session_state.fail_reason = "Государство банкрот! Долг превысил 50 млрд."
         st.rerun()
     if time_left <= 0:
         st.session_state.final_trust = st.session_state.trust_score
         st.session_state.game_result = "win"
         st.rerun()
 
-    # --- ИНТЕРФЕЙС ---
+    # --- ОТРИСОВКА ИНТЕРФЕЙСА ---
     c1, c2 = st.columns([1, 2])
     with c1:
         st.markdown(f'<div class="timer-box">🗓 День {elapsed_time*2} / 365</div>', unsafe_allow_html=True)
@@ -421,20 +419,34 @@ else:
         if unique_warnings:
             for w in unique_warnings[:3]: 
                 st.markdown(f"<div class='critical-warning'>{w}</div>", unsafe_allow_html=True)
-        if high_tax_warning: st.markdown(f"<div class='critical-warning' style='border-color:orange; background:#fef5e7; color:#d35400'>🔥 НАЛОГИ!</div>", unsafe_allow_html=True)
+        if high_tax_warning: st.markdown(f"<div class='critical-warning' style='border-color:orange; background:#fef5e7; color:#d35400'>🔥 ВЫСОКИЙ НАЛОГ! Доверие падает!</div>", unsafe_allow_html=True)
         if debt_service_cost > 0.1: st.markdown(f"<div class='critical-warning' style='border-color:black; background:#ecf0f1; color:black'>💸 ПЛАТА ПО ДОЛГАМ: -{debt_service_cost*5:.1f} млрд/сек</div>", unsafe_allow_html=True)
 
     with c2:
         if st.session_state.current_event:
             evt = st.session_state.current_event
-            color_cls = "game-alert-bad" if evt['type'] == 'bad' else "game-alert-good"
-            st.markdown(f"""<div class="{color_cls}">
-            {evt['title']}<br><span style="font-size:16px">{evt['desc']}</span><br>
-            </div>""", unsafe_allow_html=True)
+            if evt['type'] == 'bad':
+                st.markdown(f"""
+                <div class="game-alert-bad">
+                🚨 {evt['title']}<br>
+                <span style="font-size:16px">{evt['desc']}</span><br>
+                <div style="margin-top:5px; background:white; color:black; border-radius:5px; display:inline-block; padding:2px 8px;">
+                {status_msg}
+                </div>
+                </div>
+                """, unsafe_allow_html=True)
+            elif evt['type'] == 'good':
+                st.markdown(f"""
+                <div class="game-alert-good">
+                ✨ {evt['title']}<br>
+                <span style="font-size:16px">{evt['desc']}</span>
+                </div>
+                """, unsafe_allow_html=True)
         else:
-            st.info("Ситуация стабильная...")
+            st.info("В стране спокойно...")
 
     st.divider()
+
     col_infl, col_trust, col_balance = st.columns([1, 1, 2])
     
     with col_infl:
@@ -442,21 +454,34 @@ else:
         ic = "#e74c3c" if st.session_state.inflation > 7.0 else "#2C3E50"
         st.markdown(f"<div style='font-size: 60px; font-weight: bold; text-align: center; color: {ic};'>{st.session_state.inflation:.1f}%</div>", unsafe_allow_html=True)
         if inflation_warning: st.caption("⚠️ ОПАСНОСТЬ!")
+        elif tax_rate < 30: st.caption("📈 Растет (Низкий налог)")
+        elif total_spending > 80: st.caption("📈 Растет (Высокие расходы)")
 
     with col_trust:
+        trust_color = get_color_for_trust(st.session_state.trust_score)
         st.markdown(f"<div style='text-align:center; color:#7f8c8d; font-size:20px;'>ДОВЕРИЕ</div>", unsafe_allow_html=True)
-        tc = get_color_for_trust(st.session_state.trust_score)
-        st.markdown(f"<div style='font-size: 60px; font-weight: bold; text-align: center; color: {tc};'>{int(st.session_state.trust_score)}%</div>", unsafe_allow_html=True)
+        st.markdown(f"""
+        <div style="font-size: 60px; font-weight: bold; text-align: center; color: {trust_color};">
+        {int(st.session_state.trust_score)}%
+        </div>
+        """, unsafe_allow_html=True)
 
     with col_balance:
-        st.markdown(f"<div style='text-align:center; color:#7f8c8d; font-size:20px;'>РЕЗЕРВЫ</div>", unsafe_allow_html=True)
-        rc = "normal" if st.session_state.national_reserves >= 0 else "inverse"
-        st.metric("Кубышка", f"{st.session_state.national_reserves:.1f} млрд", delta=f"{balance_rate:.1f}/с", delta_color=rc)
+        st.markdown(f"<div style='text-align:center; color:#7f8c8d; font-size:20px;'>РЕЗЕРВЫ (НАКОПЛЕНИЯ)</div>", unsafe_allow_html=True)
         
-        # Исправлено имя переменной в графике: revenue -> current_revenue
-        fig = go.Figure(go.Bar(x=[total_spending, current_revenue], y=['Расходы', 'Доходы'], orientation='h', marker_color=['#c0392b', '#27ae60'], textposition='auto', text=[f"{total_spending:.1f}", f"{current_revenue:.1f}"]))
-        fig.update_layout(height=100, margin={"r":0,"t":0,"l":0,"b":0}, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-        st.plotly_chart(fig, use_container_width=True)
+        reserves_color = "normal" if st.session_state.national_reserves >= 0 else "inverse"
+        st.metric("Гос. Кубышка", f"{st.session_state.national_reserves:.1f} млрд", delta=f"{balance_rate:.1f} / сек", delta_color=reserves_color)
+        
+        fig_bar = go.Figure(go.Bar(
+            x=[total_spending, current_revenue],
+            y=['Расходы', 'Доходы'],
+            orientation='h',
+            marker_color=['#c0392b', '#27ae60'],
+            text=[f"{total_spending:.1f}", f"{current_revenue:.1f}"],
+            textposition='auto'
+        ))
+        fig_bar.update_layout(height=100, margin={"r":0,"t":0,"l":0,"b":0}, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+        st.plotly_chart(fig_bar, use_container_width=True)
 
     time.sleep(1)
     st.rerun()
