@@ -50,7 +50,7 @@ st.markdown("""
         background-color: #fadbd8; 
         padding: 8px; 
         border-radius: 5px; 
-        margin-bottom: 5px;
+        margin-bottom: 5px; 
         border-left: 5px solid #c0392b;
         animation: shake 0.5s;
         animation-iteration-count: infinite;
@@ -109,6 +109,7 @@ if 'extra_budget' not in st.session_state: st.session_state.extra_budget = 0
 if 'event_solved_flag' not in st.session_state: st.session_state.event_solved_flag = False
 if 'active_warnings' not in st.session_state: st.session_state.active_warnings = []
 if 'event_history' not in st.session_state: st.session_state.event_history = []
+
 if 'inflation' not in st.session_state: st.session_state.inflation = 1.5
 if 'trust_score' not in st.session_state: st.session_state.trust_score = 60.0
 if 'national_reserves' not in st.session_state: st.session_state.national_reserves = 10.0
@@ -146,7 +147,9 @@ def get_next_event(event_type):
     pool = BAD_EVENTS if event_type == "bad" else GOOD_EVENTS
     recent_history = st.session_state.event_history[-4:]
     available_events = [e for e in pool if e['title'] not in recent_history]
-    if not available_events: available_events = pool
+    
+    if not available_events:
+        available_events = pool
 
     if event_type == "bad":
         total_weight = sum(evt['weight'] for evt in available_events)
@@ -190,17 +193,20 @@ def get_color_for_trust(value):
 if not st.session_state.game_active and st.session_state.game_result is None:
     st.title("🇨🇭 Симулятор Госбюджета: 180 Секунд Власти")
     st.markdown("""
-    ### Добро пожаловать в ЦБ Швейцарии!
-    У вас есть ровно **180 секунд**, чтобы удержать страну на плаву.
+    ### Добро пожаловать. Вы думаете, управлять государством легко? 
+    У вас есть ровно **180 секунд**, чтобы убедиться в обратном.
+    
+    Вам предстоит на своей шкуре ощутить этот жесткий баланс: когда денег не хватает, кризисы бьют без предупреждения, а население требует заботы.
     
     ---
-    **⚡ НОВАЯ МЕХАНИКА: СТАВКА ЦБ**
+    **⚡ НОВАЯ МЕХАНИКА: СТАВКА ЦБ И ИНФЛЯЦИЯ**
     
     1.  **📊 Процентная ставка (Rate):**
         * **Повышаете ставку:** Инфляция падает, но растет стоимость долгов и падает доверие (дорогая ипотека!).
         * **Понижаете ставку:** Экономика растет, но Инфляция взлетает!
     2.  **💰 Налоги:** * Высокие налоги быстро убивают доверие. Низкие налоги разгоняют инфляцию.
     3.  **💸 Кубышка:** Если у вас долг (минус в резервах), вы платите проценты каждую секунду! Не дайте долгу сожрать бюджет.
+    4. **📈 Инфляция:** Если инфляция выше 7%, доверие начинает падать!
     """)
     if st.button("ПРИНЯТЬ ВЫЗОВ", type="primary", use_container_width=True):
         start_game()
@@ -212,6 +218,7 @@ elif st.session_state.game_result:
         st.success(f"🏆 ПОБЕДА! Год завершен успешно. Доверие: {int(st.session_state.trust_score)}%. Резервы: {int(st.session_state.national_reserves)} млрд.")
     else:
         st.error(f"💀 ВЫ УВОЛЕНЫ! {st.session_state.fail_reason}")
+    
     if st.button("Играть снова"):
         start_game()
         st.rerun()
@@ -235,19 +242,25 @@ else:
     
     st.sidebar.markdown("---")
     st.sidebar.header("⚙️ Расходы Бюджета")
+    # Добавлены подсказки с минимумами
     exp_social = st.sidebar.slider("🏥 Соц. обеспечение (Мин. 19)", 0.0, 60.0, 30.0, 0.5)
     exp_education = st.sidebar.slider("🎓 Образование (Мин. 10)", 0.0, 30.0, 10.0, 0.5)
     exp_transport = st.sidebar.slider("🚆 Транспорт (Мин. 10)", 0.0, 30.0, 10.0, 0.5)
     exp_security = st.sidebar.slider("🛡️ Оборона (Мин. 12)", 0.0, 30.0, 12.0, 0.5)
     exp_admin = st.sidebar.slider("🏛️ Госуправление (Мин. 8)", 0.0, 20.0, 8.0, 0.5)
     
-    current_stats = { 'social': exp_social, 'admin': exp_admin, 'transport': exp_transport, 'security': exp_security, 'education': exp_education }
+    current_stats = {
+        'social': exp_social, 'admin': exp_admin, 
+        'transport': exp_transport, 'security': exp_security, 
+        'education': exp_education
+    }
+    
     total_spending = sum(current_stats.values())
 
     # --- ЛОГИКА ДОВЕРИЯ И ИНФЛЯЦИИ ---
     trust_change = 0.0
     
-    # 1. Влияние Налогов
+    # 1. Налоги
     high_tax_warning = False
     if tax_rate > 30:
         trust_drop = 0.1 + (tax_rate - 30) * 0.09857
@@ -255,74 +268,94 @@ else:
         high_tax_warning = True
     elif tax_rate < 30:
         trust_change += 0.2 
-        # Низкий налог разгоняет инфляцию
-        st.session_state.inflation += (30 - tax_rate) * 0.005 
+        inflation_growth = (30 - tax_rate) * 0.008 # Увеличили рост инфляции
+        st.session_state.inflation += inflation_growth
+    elif tax_rate == 30:
+        if st.session_state.inflation > 0.5:
+            st.session_state.inflation -= 0.1
 
-    # 2. Влияние Процентной Ставки (НОВОЕ!)
-    # Базовая ставка нейтральная = 2.0%
-    # Если ставка выше -> Инфляция падает, Доверие падает (ипотека дорогая)
+    # 2. Влияние Процентной Ставки
     if interest_rate > 2.0:
-        st.session_state.inflation -= (interest_rate - 2.0) * 0.05 # Сбиваем инфляцию
-        trust_change -= (interest_rate - 2.0) * 0.05 # Людям не нравится дорогая ставка
-    # Если ставка ниже -> Инфляция растет (дешевые деньги)
+        st.session_state.inflation -= (interest_rate - 2.0) * 0.08 # Сильнее сбиваем инфляцию
+        trust_change -= (interest_rate - 2.0) * 0.05 
     elif interest_rate < 2.0:
-        st.session_state.inflation += (2.0 - interest_rate) * 0.03
+        st.session_state.inflation += (2.0 - interest_rate) * 0.05 # Быстрее растет инфляция
 
     # 3. Инфляция от расходов
     if total_spending > 60:
-        st.session_state.inflation += (total_spending - 60) * 0.002
+        st.session_state.inflation += (total_spending - 60) * 0.003 # Увеличили влияние расходов
 
-    # Естественное стремление инфляции к минимуму
     if st.session_state.inflation > 0.5:
         st.session_state.inflation -= 0.01
 
-    # Влияние Инфляции на Доверие (Критично > 10%)
+    # 4. Инфляция и Доверие (Порог 7%)
     inflation_warning = False
-    if st.session_state.inflation > 10.0:
-        trust_change -= (st.session_state.inflation - 10.0) * 0.2
+    if st.session_state.inflation > 7.0: # Порог снижен до 7%
+        inflation_penalty = (st.session_state.inflation - 7.0) * 0.2
+        trust_change -= inflation_penalty
         inflation_warning = True
+        st.session_state.active_warnings.append(f"🔥 ВЫСОКАЯ ИНФЛЯЦИЯ! ({st.session_state.inflation:.1f}%)")
 
-    # 4. Логика Расходов
-    st.session_state.active_warnings = []
-    
-    def calc_budget(val, min_v, txt):
-        if val < min_v:
-            st.session_state.active_warnings.append(txt)
-            return -random.uniform(0.2, 0.5)
-        elif val > min_v:
-            return (val - min_v) * 0.005
+    # 5. ЛОГИКА РАСХОДОВ
+    st.session_state.active_warnings = [] # Сброс, потом заполняем заново
+    if inflation_warning:
+         st.session_state.active_warnings.append(f"🔥 ВЫСОКАЯ ИНФЛЯЦИЯ! ({st.session_state.inflation:.1f}%)")
+
+    def calculate_budget_impact(value, min_val, warning_text):
+        if value < min_val:
+            st.session_state.active_warnings.append(warning_text)
+            return -random.uniform(0.2, 0.5) 
+        elif value > min_val + 2.0:
+            excess = value - (min_val + 2.0)
+            return excess * 0.005 
+        elif value >= min_val:
+             return -0.05
         return 0
 
     if exp_social < 19.0:
         trust_change -= random.uniform(0.3, 0.5)
-        if st.session_state.revenue_shock_factor > 0.6: st.session_state.revenue_shock_factor -= 0.0015
+        if st.session_state.revenue_shock_factor > 0.6: 
+            st.session_state.revenue_shock_factor -= 0.0015
         st.session_state.active_warnings.append(f"🏥 ЭПИДЕМИЯ! (Расходы < 19 млрд)")
-    else: trust_change += (exp_social - 19.0) * 0.005
+    elif exp_social > 22.0: 
+        trust_change += (exp_social - 22.0) * 0.005 
+    else:
+        trust_change -= 0.05
 
-    trust_change += calc_budget(exp_transport, 10.0, "🚆 ТРАНСПОРТНЫЙ КОЛЛАПС!")
-    trust_change += calc_budget(exp_education, 10.0, "🎓 ЗАБАСТОВКИ!")
-    trust_change += calc_budget(exp_security, 12.0, "🛡️ БУНТ АРМИИ!")
-    trust_change += calc_budget(exp_admin, 8.0, "🏛️ ХАОС В МЭРИЯХ!")
+    trust_change += calculate_budget_impact(exp_transport, 10.0, "🚆 ТРАНСПОРТНЫЙ КОЛЛАПС!")
+    trust_change += calculate_budget_impact(exp_education, 10.0, "🎓 ЗАБАСТОВКИ!")
+    trust_change += calculate_budget_impact(exp_security, 12.0, "🛡️ БУНТ АРМИИ!")
+    trust_change += calculate_budget_impact(exp_admin, 8.0, "🏛️ ХАОС В МЭРИЯХ!")
 
-    # --- СОБЫТИЯ ---
+    # --- ОБРАБОТКА СОБЫТИЙ ---
     time_since_last = time.time() - st.session_state.last_event_time
+    
     if st.session_state.current_event:
         evt = st.session_state.current_event
         if evt['type'] == 'bad':
             is_solved = evt['condition'](current_stats)
-            status_msg = "✅ РЕШЕНО!" if is_solved else "❌ КРИЗИС!"
-            if is_solved and not st.session_state.event_solved_flag:
-                st.session_state.trust_score += random.randint(3, 6)
-                st.session_state.event_solved_flag = True
-                st.toast("Кризис решен! Доверие +", icon="🚀")
+            if is_solved:
+                status_msg = "✅ РЕШЕНО! ДЕРЖАТЬ ПОЗИЦИИ"
+                if not st.session_state.event_solved_flag:
+                    bonus = random.randint(3, 6)
+                    st.session_state.trust_score += bonus 
+                    st.session_state.event_solved_flag = True
+                    st.toast(f"Отлично! Доверие +{bonus}%", icon="🚀")
+            else:
+                status_msg = "❌ КРИЗИС! ПРИМИТЕ МЕРЫ"
             
-            if time_since_last > 15:
+            if time_since_last > 15: 
                 if not is_solved:
-                    st.session_state.trust_score -= random.randint(10, 16)
-                    st.toast("ПРОВАЛ!", icon="💥")
+                    damage = random.randint(10, 16)
+                    st.session_state.trust_score -= damage 
+                    st.toast(f"Провал! Штраф -{damage}%", icon="💥")
+                else:
+                    st.toast("Угроза миновала.", icon="🛡️")
+                
                 st.session_state.current_event = None
                 st.session_state.last_event_time = time.time()
                 st.session_state.event_solved_flag = False
+
         elif evt['type'] == 'good':
             if time_since_last > 5:
                 st.session_state.current_event = None
@@ -332,17 +365,22 @@ else:
     elif time_since_last > random.randint(9, 16):
         if random.random() < 0.73:
             st.session_state.current_event = get_next_event("bad")
+            st.session_state.event_solved_flag = False
         else:
             st.session_state.current_event = get_next_event("good")
-            ge = st.session_state.current_event
-            if ge['effect'] == 'trust': st.session_state.trust_score += ge['val']
-            elif ge['effect'] == 'money': 
-                st.session_state.national_reserves += ge['val']
-                st.toast(f"Бонус в бюджет: +{ge['val']} млрд", icon="💰")
+            st.session_state.event_solved_flag = False
+            good_evt = st.session_state.current_event
+            if good_evt['effect'] == 'trust':
+                st.session_state.trust_score += good_evt['val']
+                st.toast(f"Хорошие новости! +{good_evt['val']}%", icon="🎉")
+            elif good_evt['effect'] == 'money':
+                st.session_state.extra_budget += good_evt['val'] 
+                st.session_state.national_reserves += good_evt['val']
+                st.toast(f"Прибыль! +{good_evt['val']} млрд в резервы", icon="💰")
         st.session_state.last_event_time = time.time()
         st.rerun()
 
-    # --- ФИНАНСЫ (С УЧЕТОМ ДОЛГА) ---
+    # --- ФИНАНСЫ ---
     income_rate = 10 + (tax_rate * 2.5) 
     current_revenue = income_rate * st.session_state.revenue_shock_factor
     balance_rate = current_revenue - total_spending
@@ -378,8 +416,11 @@ else:
     c1, c2 = st.columns([1, 2])
     with c1:
         st.markdown(f'<div class="timer-box">🗓 День {elapsed_time*2} / 365</div>', unsafe_allow_html=True)
-        if st.session_state.active_warnings:
-            for w in st.session_state.active_warnings: st.markdown(f"<div class='critical-warning'>{w}</div>", unsafe_allow_html=True)
+        # Убираем дубликаты
+        unique_warnings = list(set(st.session_state.active_warnings))
+        if unique_warnings:
+            for w in unique_warnings[:3]: 
+                st.markdown(f"<div class='critical-warning'>{w}</div>", unsafe_allow_html=True)
         if high_tax_warning: st.markdown(f"<div class='critical-warning' style='border-color:orange; background:#fef5e7; color:#d35400'>🔥 НАЛОГИ!</div>", unsafe_allow_html=True)
         if debt_service_cost > 0.1: st.markdown(f"<div class='critical-warning' style='border-color:black; background:#ecf0f1; color:black'>💸 ПЛАТА ПО ДОЛГАМ: -{debt_service_cost*5:.1f} млрд/сек</div>", unsafe_allow_html=True)
 
@@ -398,7 +439,7 @@ else:
     
     with col_infl:
         st.markdown(f"<div style='text-align:center; color:#7f8c8d; font-size:20px;'>ИНФЛЯЦИЯ</div>", unsafe_allow_html=True)
-        ic = "#e74c3c" if st.session_state.inflation > 10 else "#2C3E50"
+        ic = "#e74c3c" if st.session_state.inflation > 7.0 else "#2C3E50"
         st.markdown(f"<div style='font-size: 60px; font-weight: bold; text-align: center; color: {ic};'>{st.session_state.inflation:.1f}%</div>", unsafe_allow_html=True)
         if inflation_warning: st.caption("⚠️ ОПАСНОСТЬ!")
 
