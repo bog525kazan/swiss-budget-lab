@@ -103,8 +103,6 @@ if 'game_active' not in st.session_state:
     st.session_state.game_active = False
 if 'start_time' not in st.session_state:
     st.session_state.start_time = 0
-if 'penalties' not in st.session_state:
-    st.session_state.penalties = 0 
 if 'last_event_time' not in st.session_state:
     st.session_state.last_event_time = 0
 if 'current_event' not in st.session_state:
@@ -113,20 +111,22 @@ if 'game_result' not in st.session_state:
     st.session_state.game_result = None
 if 'revenue_shock_factor' not in st.session_state:
     st.session_state.revenue_shock_factor = 1.0
-if 'bonus_trust' not in st.session_state:
-    st.session_state.bonus_trust = 0 
 if 'extra_budget' not in st.session_state:
     st.session_state.extra_budget = 0
 if 'event_solved_flag' not in st.session_state:
     st.session_state.event_solved_flag = False
 if 'active_warnings' not in st.session_state:
     st.session_state.active_warnings = []
-if 'negligence_recovery' not in st.session_state:
-    st.session_state.negligence_recovery = 0 
 if 'event_history' not in st.session_state:
     st.session_state.event_history = []
+
+# НОВЫЕ ПЕРЕМЕННЫЕ СОСТОЯНИЯ
 if 'inflation' not in st.session_state:
     st.session_state.inflation = 0.5
+if 'trust_score' not in st.session_state:
+    st.session_state.trust_score = 60.0 # Теперь доверие - это переменная, которая меняется плавно
+if 'national_reserves' not in st.session_state:
+    st.session_state.national_reserves = 10.0 # Стартовые накопления (млрд)
 
 # --- 3. ДАННЫЕ СОБЫТИЙ ---
 BAD_EVENTS = [
@@ -185,16 +185,15 @@ def start_game():
     st.session_state.game_active = True
     st.session_state.start_time = time.time()
     st.session_state.last_event_time = time.time()
-    st.session_state.penalties = 0
     st.session_state.current_event = None
     st.session_state.game_result = None
     st.session_state.revenue_shock_factor = 1.0
-    st.session_state.bonus_trust = 0
     st.session_state.extra_budget = 0
     st.session_state.event_solved_flag = False
-    st.session_state.negligence_recovery = 0
     st.session_state.event_history = []
     st.session_state.inflation = 0.5
+    st.session_state.trust_score = 60.0 # Сброс доверия
+    st.session_state.national_reserves = 10.0 # Сброс денег
 
 def get_color_for_trust(value):
     if value < 30: return "#e74c3c" 
@@ -211,15 +210,16 @@ if not st.session_state.game_active and st.session_state.game_result is None:
     ### Добро пожаловать. Вы думаете, управлять государством легко? 
     У вас есть ровно **180 секунд**, чтобы убедиться в обратном.
     
-    Вам предстоит на своей шкуре ощутить этот жесткий баланс: когда денег не хватает, кризисы бьют без предупреждения, а население требует заботы. Любое ваше решение имеет цену. Попробуйте удержать страну от краха и сохранить доверие людей.
+    Вам предстоит на своей шкуре ощутить этот жесткий баланс: когда денег не хватает, кризисы бьют без предупреждения, а население требует заботы.
     
     ---
-    **⚡ ВНИМАНИЕ! Экономическая модель:**
-    1. **Налоги (0-100%):**
-       - **30%**: Золотая середина.
-       - **< 30%**: Растет инфляция (постепенно убивает доверие).
-       - **> 30%**: Доверие падает **МГНОВЕННО** (от -0.1% до -7.0% в секунду).
-    2. **Расходы:** Критические минимумы (Медицина < 19, Транспорт < 10 и т.д.) вызывают коллапс.
+    **⚡ НОВАЯ МЕХАНИКА: НАКОПЛЕНИЯ И ИНФЛЯЦИЯ**
+    
+    1.  **Кубышка (Резервы):** Деньги не исчезают! Если у вас профицит (Доходы > Расходы), деньги копятся. Если дефицит — тратятся резервы. Не уйдите в минус!
+    2.  **Налоги (0-100%):**
+        * **> 30% (Высокие):** Доходы растут, но **Доверие падает** (от -0.1 до -7% в секунду!).
+        * **< 30% (Низкие):** Доверие растет (+0.2% в сек), НО **растет Инфляция**.
+    3.  **Инфляция:** Если она поднимется выше 10%, она начнет "пожирать" ваше Доверие.
     """)
     if st.button("ПРИНЯТЬ ВЫЗОВ", type="primary", use_container_width=True):
         start_game()
@@ -229,7 +229,7 @@ if not st.session_state.game_active and st.session_state.game_result is None:
 elif st.session_state.game_result:
     if st.session_state.game_result == "win":
         st.balloons()
-        st.success(f"🏆 ПОБЕДА! Год завершен успешно. Доверие: {st.session_state.final_trust}%")
+        st.success(f"🏆 ПОБЕДА! Год завершен успешно. Доверие: {int(st.session_state.trust_score)}%. Резервы: {int(st.session_state.national_reserves)} млрд.")
     else:
         st.error(f"💀 ВЫ УВОЛЕНЫ! {st.session_state.fail_reason}")
     
@@ -241,9 +241,6 @@ elif st.session_state.game_result:
 else:
     elapsed_time = int(time.time() - st.session_state.start_time)
     time_left = 180 - elapsed_time
-    
-    # ЭНТРОПИЯ
-    entropy_loss = elapsed_time * 0.1
     
     # ЧЕРНЫЙ ЛЕБЕДЬ
     if st.session_state.revenue_shock_factor == 1.0 and random.random() < 0.015:
@@ -270,23 +267,24 @@ else:
         'education': exp_education
     }
 
-    # --- ЛОГИКА НАЛОГОВ И ИНФЛЯЦИИ (ОБНОВЛЕННАЯ) ---
+    # --- ЛОГИКА НАЛОГОВ И ИНФЛЯЦИИ (ДИНАМИЧЕСКАЯ) ---
+    trust_change = 0.0
     
-    # 1. Налоги > 30% -> Прямой удар по доверию
+    # 1. Налоги > 30% -> Удар по доверию
     high_tax_warning = False
     if tax_rate > 30:
         # Линейная интерполяция: 30% -> 0.1, 100% -> 7.0
-        # Формула: 0.1 + (x - 30) * ((7.0 - 0.1) / (100 - 30))
-        # 6.9 / 70 = 0.09857
+        # drop = 0.1 + (diff * factor)
         trust_drop = 0.1 + (tax_rate - 30) * 0.09857
-        st.session_state.penalties += trust_drop
+        trust_change -= trust_drop
         high_tax_warning = True
 
-    # 2. Налоги < 30% -> Рост инфляции
+    # 2. Налоги < 30% -> Медленный рост доверия + Рост инфляции
     elif tax_rate < 30:
-        # Чем меньше налог, тем быстрее растет инфляция
-        # При 0% рост быстрее, при 29% рост минимален
-        inflation_growth = (30 - tax_rate) * 0.02 # Коэффициент роста
+        trust_change += 0.2 # Приятно платить меньше налогов
+        
+        # Инфляция растет тем быстрее, чем ниже налог (0% налог = много денег у людей)
+        inflation_growth = (30 - tax_rate) * 0.03 
         st.session_state.inflation += inflation_growth
         
     # Возврат инфляции к норме, если налоги нормальные (30%)
@@ -295,50 +293,37 @@ else:
             st.session_state.inflation -= 0.1
 
     # 3. Влияние Инфляции на Доверие
-    # Если инфляция выше 10%, она начинает "есть" доверие
     inflation_warning = False
     if st.session_state.inflation > 10.0:
-        inflation_penalty = (st.session_state.inflation - 10.0) * 0.3
-        st.session_state.penalties += inflation_penalty
+        # Если инфляция выше 10%, она начинает "есть" доверие
+        inflation_penalty = (st.session_state.inflation - 10.0) * 0.15
+        trust_change -= inflation_penalty
         inflation_warning = True
 
     # --- ЛОГИКА "ХАЛАТНОСТИ" ---
     st.session_state.active_warnings = []
-    current_penalty_increment = 0
-    is_negligent = False
     
     if exp_social < 19.0:
-        current_penalty_increment += random.uniform(0.3, 0.5)
+        trust_change -= random.uniform(0.3, 0.5)
         if st.session_state.revenue_shock_factor > 0.6: 
             st.session_state.revenue_shock_factor -= 0.0015
         st.session_state.active_warnings.append(f"🏥 ЭПИДЕМИЯ! (Расходы < 19 млрд)")
-        is_negligent = True
 
     if exp_transport < 10.0:
-        current_penalty_increment += random.uniform(0.2, 0.4)
+        trust_change -= random.uniform(0.2, 0.4)
         st.session_state.active_warnings.append(f"🚆 ТРАНСПОРТНЫЙ КОЛЛАПС! (Расходы < 10 млрд)")
-        is_negligent = True
 
     if exp_education < 10.0:
-        current_penalty_increment += random.uniform(0.2, 0.4)
+        trust_change -= random.uniform(0.2, 0.4)
         st.session_state.active_warnings.append(f"🎓 ЗАБАСТОВКИ! (Расходы < 10 млрд)")
-        is_negligent = True
 
     if exp_security < 12.0:
-        current_penalty_increment += random.uniform(0.5, 0.8)
+        trust_change -= random.uniform(0.5, 0.8)
         st.session_state.active_warnings.append(f"🛡️ РАЗВАЛ АРМИИ! (Расходы < 12 млрд)")
-        is_negligent = True
 
     if exp_admin < 8.0:
-        current_penalty_increment += random.uniform(0.2, 0.3)
+        trust_change -= random.uniform(0.2, 0.3)
         st.session_state.active_warnings.append(f"🏛️ ХАОС В МЭРИЯХ! (Расходы < 8 млрд)")
-        is_negligent = True
-
-    if is_negligent:
-        st.session_state.penalties += current_penalty_increment
-    else:
-        if st.session_state.penalties > 0:
-            st.session_state.penalties = max(0, st.session_state.penalties - 0.15)
 
     # --- ОБРАБОТКА СОБЫТИЙ ---
     time_since_last = time.time() - st.session_state.last_event_time
@@ -347,12 +332,11 @@ else:
         evt = st.session_state.current_event
         if evt['type'] == 'bad':
             is_solved = evt['condition'](current_stats)
-            
             if is_solved:
                 status_msg = "✅ РЕШЕНО! ДЕРЖАТЬ ПОЗИЦИИ"
                 if not st.session_state.event_solved_flag:
                     bonus = random.randint(3, 6)
-                    st.session_state.bonus_trust += bonus
+                    st.session_state.trust_score += bonus # Бонус сразу
                     st.session_state.event_solved_flag = True
                     st.toast(f"Отлично! Доверие +{bonus}%", icon="🚀")
             else:
@@ -361,7 +345,7 @@ else:
             if time_since_last > 15: 
                 if not is_solved:
                     damage = random.randint(10, 16)
-                    st.session_state.penalties += damage
+                    st.session_state.trust_score -= damage # Урон сразу
                     st.toast(f"Провал! Штраф -{damage}%", icon="💥")
                 else:
                     st.toast("Угроза миновала.", icon="🛡️")
@@ -383,41 +367,49 @@ else:
         else:
             st.session_state.current_event = get_next_event("good")
             st.session_state.event_solved_flag = False
-            
             good_evt = st.session_state.current_event
             if good_evt['effect'] == 'trust':
-                st.session_state.bonus_trust += good_evt['val']
+                st.session_state.trust_score += good_evt['val']
                 st.toast(f"Хорошие новости! +{good_evt['val']}%", icon="🎉")
             elif good_evt['effect'] == 'money':
-                st.session_state.extra_budget += good_evt['val']
-                st.toast(f"Прибыль! +{good_evt['val']} млрд", icon="💰")
-        
+                st.session_state.extra_budget += good_evt['val'] # Это одноразовый бонус в резервы
+                st.session_state.national_reserves += good_evt['val'] # Добавляем прямо в резервы
+                st.toast(f"Прибыль! +{good_evt['val']} млрд в резервы", icon="💰")
         st.session_state.last_event_time = time.time()
         st.rerun()
 
-    # --- ФИНАНСЫ ---
-    revenue_from_tax = 10 + (tax_rate * 2.5)
-    revenue = (revenue_from_tax * st.session_state.revenue_shock_factor) + st.session_state.extra_budget
-    total_spending = sum(current_stats.values())
-    balance = revenue - total_spending
+    # --- ФИНАНСЫ (НАКОПИТЕЛЬНАЯ СИСТЕМА) ---
+    # Доход в секунду (Rate)
+    income_rate = 10 + (tax_rate * 2.5) 
+    current_revenue = income_rate * st.session_state.revenue_shock_factor
+    current_spending = sum(current_stats.values())
     
-    # --- ДОВЕРИЕ ---
-    base_trust = 60 
-    if balance < 0: base_trust -= abs(balance) * 0.8
-    final_trust = base_trust - st.session_state.penalties - entropy_loss + st.session_state.bonus_trust
-    final_trust = max(min(int(final_trust), 100), 0)
+    # Баланс за этот тик (секунду)
+    balance_rate = current_revenue - current_spending
+    
+    # Добавляем в общую кубышку (делим на 5, чтобы цифры не улетали в космос слишком быстро, имитация масштаба)
+    st.session_state.national_reserves += balance_rate / 5.0
+    
+    # --- ОБНОВЛЕНИЕ ДОВЕРИЯ ---
+    # Энтропия
+    trust_change -= 0.1
+    
+    # Применяем все изменения к доверию
+    st.session_state.trust_score += trust_change
+    st.session_state.trust_score = max(min(st.session_state.trust_score, 100), 0)
 
     # --- GAME OVER ---
-    if final_trust < 30:
+    if st.session_state.trust_score < 30:
         st.session_state.game_result = "lose"
         st.session_state.fail_reason = "Революция! Доверие упало ниже 30%."
         st.rerun()
-    if balance < -35: 
+    # Проигрыш теперь от опустошения резервов, а не от мгновенного дефицита
+    if st.session_state.national_reserves < -50: 
         st.session_state.game_result = "lose"
-        st.session_state.fail_reason = "Банкротство! Дефицит превысил 35 млрд."
+        st.session_state.fail_reason = "Государство банкрот! Долг превысил 50 млрд."
         st.rerun()
     if time_left <= 0:
-        st.session_state.final_trust = final_trust
+        st.session_state.final_trust = st.session_state.trust_score
         st.session_state.game_result = "win"
         st.rerun()
 
@@ -428,9 +420,8 @@ else:
         if st.session_state.active_warnings:
             for warn in st.session_state.active_warnings:
                 st.markdown(f"<div class='critical-warning'>{warn}</div>", unsafe_allow_html=True)
-        
         if high_tax_warning:
-             st.markdown(f"<div class='critical-warning' style='border-color:orange; background:#fef5e7; color:#d35400'>🔥 НАЛОГИ ДУШАТ! Доверие падает!</div>", unsafe_allow_html=True)
+             st.markdown(f"<div class='critical-warning' style='border-color:orange; background:#fef5e7; color:#d35400'>🔥 ВЫСОКИЙ НАЛОГ! Доверие падает!</div>", unsafe_allow_html=True)
             
     with c2:
         if st.session_state.current_event:
@@ -473,28 +464,28 @@ else:
             st.caption("📈 Растет (Низкий налог)")
 
     with col_trust:
-        trust_color = get_color_for_trust(final_trust)
+        trust_color = get_color_for_trust(st.session_state.trust_score)
         st.markdown(f"<div style='text-align:center; color:#7f8c8d; font-size:20px;'>ДОВЕРИЕ</div>", unsafe_allow_html=True)
         st.markdown(f"""
         <div style="font-size: 60px; font-weight: bold; text-align: center; color: {trust_color};">
-        {final_trust}%
+        {int(st.session_state.trust_score)}%
         </div>
         """, unsafe_allow_html=True)
 
     with col_balance:
-        st.markdown(f"<div style='text-align:center; color:#7f8c8d; font-size:20px;'>БЮДЖЕТ (МЛРД CHF)</div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='text-align:center; color:#7f8c8d; font-size:20px;'>РЕЗЕРВЫ (НАКОПЛЕНИЯ)</div>", unsafe_allow_html=True)
         
-        b1, b2, b3 = st.columns(3)
-        b1.metric("Доходы", f"{revenue:.1f}", delta=f"Налог: {tax_rate}%", delta_color="normal")
-        b2.metric("Расходы", f"{total_spending:.1f}")
-        b3.metric("БАЛАНС", f"{balance:.1f}", delta="OK" if balance > 0 else "Дефицит")
+        # Основная метрика теперь - НАКОПЛЕНИЯ, а не скорость
+        reserves_color = "normal" if st.session_state.national_reserves >= 0 else "inverse"
+        st.metric("Гос. Кубышка", f"{st.session_state.national_reserves:.1f} млрд", delta=f"{balance_rate:.1f} / сек", delta_color=reserves_color)
         
+        # Визуализация скорости (Flow)
         fig_bar = go.Figure(go.Bar(
-            x=[total_spending, revenue],
+            x=[current_spending, current_revenue],
             y=['Расходы', 'Доходы'],
             orientation='h',
             marker_color=['#c0392b', '#27ae60'],
-            text=[f"{total_spending:.1f}", f"{revenue:.1f}"],
+            text=[f"{current_spending:.1f}", f"{current_revenue:.1f}"],
             textposition='auto'
         ))
         fig_bar.update_layout(height=100, margin={"r":0,"t":0,"l":0,"b":0}, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
