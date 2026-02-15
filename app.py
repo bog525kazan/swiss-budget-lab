@@ -125,7 +125,6 @@ if 'negligence_recovery' not in st.session_state:
     st.session_state.negligence_recovery = 0 
 if 'event_history' not in st.session_state:
     st.session_state.event_history = []
-# НОВОЕ: Инфляция
 if 'inflation' not in st.session_state:
     st.session_state.inflation = 0.5
 
@@ -215,12 +214,12 @@ if not st.session_state.game_active and st.session_state.game_result is None:
     Вам предстоит на своей шкуре ощутить этот жесткий баланс: когда денег не хватает, кризисы бьют без предупреждения, а население требует заботы. Любое ваше решение имеет цену. Попробуйте удержать страну от краха и сохранить доверие людей.
     
     ---
-    **⚡ ВНИМАНИЕ! Правила безопасности:**
-    1. **Налоги:** Низкий налог (0%) разгоняет инфляцию. Высокий налог (100%) вызывает революцию. Ищите баланс (~30%).
-    2. **Расходы:** Нельзя просто так урезать бюджет.
-       * 🏥 **Медицина < 19 млрд:** Эпидемия (Доверие ↓, Доходы ↓).
-       * 🚆 **Транспорт < 10 млрд:** Коллапс.
-       * 🎓 **Образование < 10 млрд:** Забастовки.
+    **⚡ ВНИМАНИЕ! Экономическая модель:**
+    1. **Налоги (0-100%):**
+       - **30%**: Золотая середина.
+       - **< 30%**: Растет инфляция (постепенно убивает доверие).
+       - **> 30%**: Доверие падает **МГНОВЕННО** (от -0.1% до -7.0% в секунду).
+    2. **Расходы:** Критические минимумы (Медицина < 19, Транспорт < 10 и т.д.) вызывают коллапс.
     """)
     if st.button("ПРИНЯТЬ ВЫЗОВ", type="primary", use_container_width=True):
         start_game()
@@ -253,7 +252,6 @@ else:
         st.toast(f"📉 ЧЕРНЫЙ ЛЕБЕДЬ! Доходы упали на {int(shock*100)}%!", icon="🦢")
 
     # --- САЙДБАР (УПРАВЛЕНИЕ) ---
-    # НОВОЕ: Налоги
     st.sidebar.markdown("---")
     st.sidebar.header("💰 Доходы (Налоги)")
     tax_rate = st.sidebar.slider("Ставка налога (%)", 0, 100, 30, 1)
@@ -272,29 +270,37 @@ else:
         'education': exp_education
     }
 
-    # --- ЛОГИКА ИНФЛЯЦИИ И НАЛОГОВ ---
-    # 1. Если налог < 25%, инфляция растет
-    if tax_rate < 25:
-        inflation_growth = (25 - tax_rate) * 0.05 # Чем меньше налог, тем быстрее растет
+    # --- ЛОГИКА НАЛОГОВ И ИНФЛЯЦИИ (ОБНОВЛЕННАЯ) ---
+    
+    # 1. Налоги > 30% -> Прямой удар по доверию
+    high_tax_warning = False
+    if tax_rate > 30:
+        # Линейная интерполяция: 30% -> 0.1, 100% -> 7.0
+        # Формула: 0.1 + (x - 30) * ((7.0 - 0.1) / (100 - 30))
+        # 6.9 / 70 = 0.09857
+        trust_drop = 0.1 + (tax_rate - 30) * 0.09857
+        st.session_state.penalties += trust_drop
+        high_tax_warning = True
+
+    # 2. Налоги < 30% -> Рост инфляции
+    elif tax_rate < 30:
+        # Чем меньше налог, тем быстрее растет инфляция
+        # При 0% рост быстрее, при 29% рост минимален
+        inflation_growth = (30 - tax_rate) * 0.02 # Коэффициент роста
         st.session_state.inflation += inflation_growth
-    # 2. Если налог > 40%, инфляция падает (дефляция)
-    elif tax_rate > 40:
-        st.session_state.inflation -= 0.1
-    # 3. Иначе стремится к норме (0.5)
-    else:
+        
+    # Возврат инфляции к норме, если налоги нормальные (30%)
+    elif tax_rate == 30:
         if st.session_state.inflation > 0.5:
-            st.session_state.inflation -= 0.05
-    
-    # Штраф за налог (Революция)
-    tax_penalty = 0
-    if tax_rate > 35:
-        # Чем выше налог от 35%, тем быстрее смерть
-        tax_penalty = (tax_rate - 35) * 0.5 
-        st.session_state.penalties += tax_penalty
-    
-    # Штраф за высокую инфляцию
+            st.session_state.inflation -= 0.1
+
+    # 3. Влияние Инфляции на Доверие
+    # Если инфляция выше 10%, она начинает "есть" доверие
+    inflation_warning = False
     if st.session_state.inflation > 10.0:
-        st.session_state.penalties += (st.session_state.inflation - 10.0) * 0.2
+        inflation_penalty = (st.session_state.inflation - 10.0) * 0.3
+        st.session_state.penalties += inflation_penalty
+        inflation_warning = True
 
     # --- ЛОГИКА "ХАЛАТНОСТИ" ---
     st.session_state.active_warnings = []
@@ -389,11 +395,9 @@ else:
         st.session_state.last_event_time = time.time()
         st.rerun()
 
-    # --- ФИНАНСЫ (НОВАЯ ФОРМУЛА) ---
-    # База 10 + (Налог * 2.5). При 30% = 85. При 0% = 10. При 100% = 260.
+    # --- ФИНАНСЫ ---
     revenue_from_tax = 10 + (tax_rate * 2.5)
     revenue = (revenue_from_tax * st.session_state.revenue_shock_factor) + st.session_state.extra_budget
-    
     total_spending = sum(current_stats.values())
     balance = revenue - total_spending
     
@@ -424,8 +428,9 @@ else:
         if st.session_state.active_warnings:
             for warn in st.session_state.active_warnings:
                 st.markdown(f"<div class='critical-warning'>{warn}</div>", unsafe_allow_html=True)
-        if tax_penalty > 0:
-             st.markdown(f"<div class='critical-warning' style='border-color:orange; background:#fef5e7; color:#d35400'>🔥 ВЫСОКИЙ НАЛОГ! Народ бунтует!</div>", unsafe_allow_html=True)
+        
+        if high_tax_warning:
+             st.markdown(f"<div class='critical-warning' style='border-color:orange; background:#fef5e7; color:#d35400'>🔥 НАЛОГИ ДУШАТ! Доверие падает!</div>", unsafe_allow_html=True)
             
     with c2:
         if st.session_state.current_event:
@@ -452,20 +457,19 @@ else:
 
     st.divider()
 
-    # НОВОЕ: 3 Колонки (Инфляция - Доверие - Бюджет)
     col_infl, col_trust, col_balance = st.columns([1, 1, 2])
     
     with col_infl:
         st.markdown(f"<div style='text-align:center; color:#7f8c8d; font-size:20px;'>ИНФЛЯЦИЯ</div>", unsafe_allow_html=True)
-        infl_color = "#e74c3c" if st.session_state.inflation > 5 else "#2C3E50"
+        infl_color = "#e74c3c" if st.session_state.inflation > 10 else "#2C3E50"
         st.markdown(f"""
         <div style="font-size: 60px; font-weight: bold; text-align: center; color: {infl_color};">
         {st.session_state.inflation:.1f}%
         </div>
         """, unsafe_allow_html=True)
-        if st.session_state.inflation > 10:
-            st.caption("⚠️ КРИТИЧНО! Съедает доверие")
-        elif tax_rate < 20:
+        if inflation_warning:
+            st.caption("⚠️ ОПАСНОСТЬ! Съедает доверие")
+        elif tax_rate < 30:
             st.caption("📈 Растет (Низкий налог)")
 
     with col_trust:
