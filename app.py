@@ -262,23 +262,20 @@ else:
         high_tax_warning = True
     elif tax_rate < 30:
         trust_change += 0.5 
-        # Уменьшено влияние налога на инфляцию на 35%
-        inflation_growth = (30 - tax_rate) * 0.00715 
+        inflation_growth = (30 - tax_rate) * 0.011 
         st.session_state.inflation += inflation_growth
     elif tax_rate == 30:
         pass 
 
     # 2. Влияние Процентной Ставки
     if interest_rate > 2.0:
-        st.session_state.inflation -= (interest_rate - 2.0) * 0.052 # Снижено на 35%
+        st.session_state.inflation -= (interest_rate - 2.0) * 0.052 
         trust_change -= (interest_rate - 2.0) * 0.05 
     elif interest_rate < 2.0:
-        # Уменьшено влияние низкой ставки на инфляцию на 35%
         st.session_state.inflation += (2.0 - interest_rate) * 0.0455
 
     # 3. Инфляция от расходов
     if total_spending > 60:
-        # Уменьшено влияние расходов на инфляцию на 35%
         st.session_state.inflation += (total_spending - 60) * 0.0026
 
     if st.session_state.inflation > 0.5:
@@ -307,7 +304,7 @@ else:
             return -random.uniform(0.2, 0.5) 
         elif value > min_val + 2.0:
             excess = value - (min_val + 2.0)
-            return excess * 0.0075 # Увеличено на 50%
+            return excess * 0.01125 # Повысили влияние щедрости на 50%
         elif value >= min_val:
              return -0.05
         return 0
@@ -318,7 +315,7 @@ else:
             st.session_state.revenue_shock_factor -= 0.0015
         st.session_state.active_warnings.append(f"🏥 ЭПИДЕМИЯ! (Расходы < 19 млрд)")
     elif exp_social > 22.0: 
-        trust_change += (exp_social - 22.0) * 0.0075 # Увеличено на 50%
+        trust_change += (exp_social - 22.0) * 0.01125 # Повысили влияние щедрости на 50%
     else:
         trust_change -= 0.05
 
