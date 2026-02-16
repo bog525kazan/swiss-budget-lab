@@ -171,7 +171,6 @@ def start_game():
     st.session_state.game_active = True
     st.session_state.start_time = time.time()
     st.session_state.last_event_time = time.time()
-    st.session_state.penalties = 0
     st.session_state.current_event = None
     st.session_state.game_result = None
     st.session_state.revenue_shock_factor = 1.0
@@ -263,28 +262,34 @@ else:
         high_tax_warning = True
     elif tax_rate < 30:
         trust_change += 0.5 
-        inflation_growth = (30 - tax_rate) * 0.011 
+        # Уменьшено влияние налога на инфляцию на 35%
+        inflation_growth = (30 - tax_rate) * 0.00715 
         st.session_state.inflation += inflation_growth
     elif tax_rate == 30:
         pass 
 
     # 2. Влияние Процентной Ставки
     if interest_rate > 2.0:
-        st.session_state.inflation -= (interest_rate - 2.0) * 0.08
+        st.session_state.inflation -= (interest_rate - 2.0) * 0.052 # Снижено на 35%
         trust_change -= (interest_rate - 2.0) * 0.05 
     elif interest_rate < 2.0:
-        st.session_state.inflation += (2.0 - interest_rate) * 0.07 
+        # Уменьшено влияние низкой ставки на инфляцию на 35%
+        st.session_state.inflation += (2.0 - interest_rate) * 0.0455
 
     # 3. Инфляция от расходов
     if total_spending > 60:
-        st.session_state.inflation += (total_spending - 60) * 0.004
+        # Уменьшено влияние расходов на инфляцию на 35%
+        st.session_state.inflation += (total_spending - 60) * 0.0026
+
+    if st.session_state.inflation > 0.5:
+        # Убрали естественное снижение
+        pass
 
     # 4. Инфляция и Доверие (Порог 7%)
     inflation_warning = False
     if st.session_state.inflation > 7.0:
-        # Убрали экспоненциальное умножение (*= 1.4), заменили на фиксированную добавку
-        # Это предотвращает мгновенный взлет в космос
-        st.session_state.inflation += 0.2  
+        # Ускоренный рост инфляции, если она уже высокая
+        st.session_state.inflation += 0.2
         
         inflation_penalty = (st.session_state.inflation - 7.0) * 0.2
         trust_change -= inflation_penalty
@@ -302,7 +307,7 @@ else:
             return -random.uniform(0.2, 0.5) 
         elif value > min_val + 2.0:
             excess = value - (min_val + 2.0)
-            return excess * 0.005 
+            return excess * 0.0075 # Увеличено на 50%
         elif value >= min_val:
              return -0.05
         return 0
@@ -313,7 +318,7 @@ else:
             st.session_state.revenue_shock_factor -= 0.0015
         st.session_state.active_warnings.append(f"🏥 ЭПИДЕМИЯ! (Расходы < 19 млрд)")
     elif exp_social > 22.0: 
-        trust_change += (exp_social - 22.0) * 0.005 
+        trust_change += (exp_social - 22.0) * 0.0075 # Увеличено на 50%
     else:
         trust_change -= 0.05
 
