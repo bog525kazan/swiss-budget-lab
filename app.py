@@ -262,7 +262,7 @@ else:
         trust_change -= trust_drop
         high_tax_warning = True
     elif tax_rate < 30:
-        trust_change += 0.2 
+        trust_change += 0.5 
         inflation_growth = (30 - tax_rate) * 0.011 
         st.session_state.inflation += inflation_growth
     elif tax_rate == 30:
