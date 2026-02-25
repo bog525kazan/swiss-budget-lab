@@ -61,7 +61,7 @@ if 'active_warnings' not in st.session_state: st.session_state.active_warnings =
 if 'event_history' not in st.session_state: st.session_state.event_history = []
 
 # Экономические показатели
-if 'inflation' not in st.session_state: st.session_state.inflation = 1.5
+if 'inflation' not in st.session_state: st.session_state.inflation = 1.0
 if 'trust_score' not in st.session_state: st.session_state.trust_score = 60.0
 if 'national_reserves' not in st.session_state: st.session_state.national_reserves = 10.0
 if 'unemployment' not in st.session_state: st.session_state.unemployment = 2.5 # База 2.5%
@@ -128,7 +128,7 @@ def start_game():
     st.session_state.event_history = []
     
     # Сброс показателей
-    st.session_state.inflation = 1.0 # Понизил старт до 1% по просьбе
+    st.session_state.inflation = 1.0 
     st.session_state.trust_score = 60.0
     st.session_state.national_reserves = 10.0
     st.session_state.unemployment = 2.5
@@ -155,11 +155,13 @@ if not st.session_state.game_active and st.session_state.game_result is None:
     1.  **📊 Ставка ЦБ и Валюта:**
         * Высокая ставка = **Сильный франк** (убивает экспорт) + **Рост безработицы**.
         * Низкая ставка = **Слабый франк** (дорогой импорт) + **Рост инфляции**.
-    2.  **🗣️ Референдумы:**
+    2.  **💰 Налоги (Ловушка популиста):**
+        * Чем ниже вы опускаете налоги, тем больше вас любит народ. НО инфляция ускоряется пропорционально. В итоге инфляция сожрет всё доверие.
+    3.  **🗣️ Референдумы:**
         * Не делайте резких движений налогами! Если доверие низкое, народ **заблокирует** ваше решение.
-    3.  **📉 Безработица (Кривая Филлипса):**
+    4.  **📉 Безработица (Кривая Филлипса):**
         * Если сбивать инфляцию слишком жестко, люди потеряют работу. Безработица > 5% = крах доверия.
-    4.  **🌍 Внешний мир:**
+    5.  **🌍 Внешний мир:**
         * Следите за статусом (сверху). Кризис в Европе ударит по вашему экспорту.
     """)
     if st.button("ПРИНЯТЬ ВЫЗОВ", type="primary", use_container_width=True):
@@ -239,34 +241,39 @@ else:
     trust_change = 0.0
     
     # 1. МЕХАНИКА: КУРС ФРАНКА
-    # База 1.00. Ставка выше 1.5% укрепляет, ниже - ослабляет.
-    # + Влияние кризиса (все бегут в франк)
     base_exchange_impact = (interest_rate - 1.5) * 0.05
     crisis_impact = 0.15 if st.session_state.global_status == "crisis" else 0
     st.session_state.exchange_rate = 1.00 + base_exchange_impact + crisis_impact
     
     # 3. МЕХАНИКА: БЕЗРАБОТИЦА (Phillips Curve)
-    # Высокая ставка и сильный франк (плохой экспорт) растят безработицу
     unemployment_pressure = (interest_rate - 2.0) * 0.02 + (st.session_state.exchange_rate - 1.0) * 0.05
     st.session_state.unemployment += unemployment_pressure * 0.1 # Инерция
-    # Естественное стремление к 2.5%
     if st.session_state.unemployment > 2.5: st.session_state.unemployment -= 0.01
     if st.session_state.unemployment < 1.0: st.session_state.unemployment = 1.0
     
-    # Влияние Налогов и Инфляции
-    if tax_rate < 30:
-        trust_change += 0.5 # Приятно платить меньше
-        inflation_growth = (30 - tax_rate) * 0.00715
+    # НОВАЯ ПРОПОРЦИОНАЛЬНАЯ ЛОГИКА НАЛОГОВ
+    high_tax_warning = False
+    if tax_rate > 30:
+        trust_drop = 0.1 + (tax_rate - 30) * 0.09857
+        trust_change -= trust_drop
+        high_tax_warning = True
+    elif tax_rate < 30:
+        # Чем ниже налог от 30, тем больше счастья (от 0 при 30% до ~1.45/сек при 1%)
+        tax_diff = 30 - tax_rate
+        trust_bonus = tax_diff * 0.05
+        trust_change += trust_bonus 
+        
+        # Инфляция тоже разгоняется пропорционально, чтобы создать эффект "ловушки"
+        inflation_growth = tax_diff * 0.012 
         st.session_state.inflation += inflation_growth
     
     # Влияние Ставки на Инфляцию
-    # Если ставка низкая - инфляция растет. Если высокая - падает.
     if interest_rate > 2.0:
         st.session_state.inflation -= (interest_rate - 2.0) * 0.052
     elif interest_rate < 2.0:
         st.session_state.inflation += (2.0 - interest_rate) * 0.0455
 
-    # Влияние Курса на Инфляцию (Слабый франк = дорогой импорт = инфляция)
+    # Влияние Курса на Инфляцию (Слабый франк = дорогой импорт)
     if st.session_state.exchange_rate < 0.9:
         st.session_state.inflation += 0.05
 
@@ -278,6 +285,8 @@ else:
     inflation_warning = False
     if st.session_state.inflation > 7.0:
         st.session_state.inflation += 0.2
+        # Штраф за инфляцию: чем она выше 7%, тем сильнее бьет по доверию.
+        # В итоге она перекроет любой бонус от низких налогов.
         trust_change -= (st.session_state.inflation - 7.0) * 0.2
         inflation_warning = True
     
@@ -351,10 +360,8 @@ else:
 
     # --- ФИНАЛЬНЫЙ РАСЧЕТ БЮДЖЕТА ---
     # Доход зависит от налога И от курса валюты (экспорт)
-    # Сильный франк (>1.0) снижает доход экспортеров
     export_factor = 1.0 - (st.session_state.exchange_rate - 1.0) * 0.5 
     
-    # Влияние внешнего фона
     global_factor = 1.0
     if st.session_state.global_status == "growth": global_factor = 1.1
     elif st.session_state.global_status == "recession": global_factor = 0.85
