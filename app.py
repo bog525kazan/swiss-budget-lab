@@ -64,8 +64,8 @@ if 'event_history' not in st.session_state: st.session_state.event_history = []
 if 'inflation' not in st.session_state: st.session_state.inflation = 1.0
 if 'trust_score' not in st.session_state: st.session_state.trust_score = 60.0
 if 'national_reserves' not in st.session_state: st.session_state.national_reserves = 10.0
-if 'unemployment' not in st.session_state: st.session_state.unemployment = 2.5 # База 2.5%
-if 'exchange_rate' not in st.session_state: st.session_state.exchange_rate = 1.00 # CHF к EUR
+if 'unemployment' not in st.session_state: st.session_state.unemployment = 2.5
+if 'exchange_rate' not in st.session_state: st.session_state.exchange_rate = 1.00
 
 # Внешний фон и Референдумы
 if 'global_status' not in st.session_state: st.session_state.global_status = "stable"
@@ -73,6 +73,17 @@ if 'last_global_change' not in st.session_state: st.session_state.last_global_ch
 if 'last_tax_rate' not in st.session_state: st.session_state.last_tax_rate = 30
 if 'referendum_active' not in st.session_state: st.session_state.referendum_active = False
 if 'referendum_message' not in st.session_state: st.session_state.referendum_message = ""
+
+# --- ЗВУКИ ---
+SOUND_MONEY = "https://upload.wikimedia.org/wikipedia/commons/1/1b/Cash_Register_Cha_Ching.ogg"
+SOUND_TADA = "https://upload.wikimedia.org/wikipedia/commons/b/b5/Tada.ogg"
+SOUND_FAIL = "https://upload.wikimedia.org/wikipedia/commons/d/d4/Buzzer.ogg"
+SOUND_SIREN = "https://upload.wikimedia.org/wikipedia/commons/8/82/Siren.ogg"
+
+def play_sound(url):
+    """Скрытно воспроизводит звук через HTML"""
+    sound_html = f'<audio autoplay style="display:none;"><source src="{url}" type="audio/ogg"></audio>'
+    st.markdown(sound_html, unsafe_allow_html=True)
 
 # --- 3. ДАННЫЕ СОБЫТИЙ ---
 BAD_EVENTS = [
@@ -127,7 +138,6 @@ def start_game():
     st.session_state.event_solved_flag = False
     st.session_state.event_history = []
     
-    # Сброс показателей
     st.session_state.inflation = 1.0 
     st.session_state.trust_score = 60.0
     st.session_state.national_reserves = 10.0
@@ -152,17 +162,11 @@ if not st.session_state.game_active and st.session_state.game_result is None:
     ---
     **⚡ ВАШИ ИНСТРУМЕНТЫ И РИСКИ:**
     
-    1.  **📊 Ставка ЦБ и Валюта:**
-        * Высокая ставка = **Сильный франк** (убивает экспорт) + **Рост безработицы**.
-        * Низкая ставка = **Слабый франк** (дорогой импорт) + **Рост инфляции**.
-    2.  **💰 Налоги (Ловушка популиста):**
-        * Чем ниже вы опускаете налоги, тем больше вас любит народ. НО инфляция ускоряется пропорционально. В итоге инфляция сожрет всё доверие.
-    3.  **🗣️ Референдумы:**
-        * Не делайте резких движений налогами! Если доверие низкое, народ **заблокирует** ваше решение.
-    4.  **📉 Безработица (Кривая Филлипса):**
-        * Если сбивать инфляцию слишком жестко, люди потеряют работу. Безработица > 5% = крах доверия.
-    5.  **🌍 Внешний мир:**
-        * Следите за статусом (сверху). Кризис в Европе ударит по вашему экспорту.
+    1.  **📊 Ставка ЦБ и Валюта:** Высокая ставка = **Сильный франк** (убивает экспорт) + **Рост безработицы**. Низкая ставка = **Слабый франк** (дорогой импорт) + **Рост инфляции**.
+    2.  **💰 Налоги (Ловушка популиста):** Чем ниже вы опускаете налоги, тем больше вас любит народ. НО инфляция ускоряется пропорционально. В итоге инфляция сожрет всё доверие.
+    3.  **🗣️ Референдумы:** Не делайте резких движений налогами! Если доверие низкое, народ **заблокирует** ваше решение.
+    4.  **📉 Безработица:** Если сбивать инфляцию слишком жестко, люди потеряют работу. Безработица > 5% = крах доверия.
+    5.  **🌍 Внешний мир:** Следите за статусом (сверху). Кризис в Европе ударит по вашему экспорту.
     """)
     if st.button("ПРИНЯТЬ ВЫЗОВ", type="primary", use_container_width=True):
         start_game()
@@ -170,9 +174,11 @@ if not st.session_state.game_active and st.session_state.game_result is None:
 
 elif st.session_state.game_result:
     if st.session_state.game_result == "win":
+        play_sound(SOUND_TADA)
         st.balloons()
         st.success(f"🏆 ПОБЕДА! Доверие: {int(st.session_state.trust_score)}%. Резервы: {int(st.session_state.national_reserves)} млрд.")
     else:
+        play_sound(SOUND_SIREN)
         st.error(f"💀 ВЫ УВОЛЕНЫ! {st.session_state.fail_reason}")
     if st.button("Играть снова"):
         start_game()
@@ -182,7 +188,7 @@ else:
     elapsed_time = int(time.time() - st.session_state.start_time)
     time_left = 180 - elapsed_time
     
-    # --- 4. МЕХАНИКА: ВНЕШНИЙ ФОН ---
+    # --- МЕХАНИКА: ВНЕШНИЙ ФОН ---
     if time.time() - st.session_state.last_global_change > 40:
         statuses = ["stable", "growth", "recession", "crisis"]
         weights = [0.4, 0.3, 0.2, 0.1]
@@ -190,7 +196,6 @@ else:
         st.session_state.last_global_change = time.time()
         st.toast(f"Мировая обстановка изменилась: {st.session_state.global_status.upper()}", icon="🌍")
 
-    # Отображение статуса
     status_map = {
         "stable": ("Стабильность", "Нормальный экспорт", "#ecf0f1"),
         "growth": ("Глобальный рост", "Экспорт растет! (+Доходы)", "#d4edda"),
@@ -221,18 +226,17 @@ else:
     }
     total_spending = sum(current_stats.values())
 
-    # --- 2. МЕХАНИКА: РЕФЕРЕНДУМЫ ---
-    # Проверка резкого изменения налога
+    # --- МЕХАНИКА: РЕФЕРЕНДУМЫ ---
     if abs(tax_rate - st.session_state.last_tax_rate) > 15:
         st.session_state.referendum_active = True
-        # Если доверие низкое, референдум проваливается
         if st.session_state.trust_score < 50:
             st.session_state.referendum_message = "🚫 НАРОД ЗАБЛОКИРОВАЛ РЕШЕНИЕ! (Низкое доверие)"
+            play_sound(SOUND_FAIL)
             tax_rate = st.session_state.last_tax_rate # Откат
         else:
             st.session_state.referendum_message = "⚠️ РЕФЕРЕНДУМ... ОДОБРЕНО (Доверие позволяет)"
             st.session_state.last_tax_rate = tax_rate
-            time.sleep(1.5) # Задержка симуляции
+            time.sleep(1.5)
     else:
         st.session_state.referendum_active = False
         st.session_state.last_tax_rate = tax_rate
@@ -240,62 +244,49 @@ else:
     # --- РАСЧЕТЫ ЭКОНОМИКИ ---
     trust_change = 0.0
     
-    # 1. МЕХАНИКА: КУРС ФРАНКА
+    # КУРС ФРАНКА
     base_exchange_impact = (interest_rate - 1.5) * 0.05
     crisis_impact = 0.15 if st.session_state.global_status == "crisis" else 0
     st.session_state.exchange_rate = 1.00 + base_exchange_impact + crisis_impact
     
-    # 3. МЕХАНИКА: БЕЗРАБОТИЦА (Phillips Curve)
+    # БЕЗРАБОТИЦА
     unemployment_pressure = (interest_rate - 2.0) * 0.02 + (st.session_state.exchange_rate - 1.0) * 0.05
-    st.session_state.unemployment += unemployment_pressure * 0.1 # Инерция
+    st.session_state.unemployment += unemployment_pressure * 0.1
     if st.session_state.unemployment > 2.5: st.session_state.unemployment -= 0.01
     if st.session_state.unemployment < 1.0: st.session_state.unemployment = 1.0
     
-    # НОВАЯ ПРОПОРЦИОНАЛЬНАЯ ЛОГИКА НАЛОГОВ
+    # ПРОПОРЦИОНАЛЬНАЯ ЛОГИКА НАЛОГОВ
     high_tax_warning = False
     if tax_rate > 30:
         trust_drop = 0.1 + (tax_rate - 30) * 0.09857
         trust_change -= trust_drop
         high_tax_warning = True
     elif tax_rate < 30:
-        # Чем ниже налог от 30, тем больше счастья (от 0 при 30% до ~1.45/сек при 1%)
         tax_diff = 30 - tax_rate
         trust_bonus = tax_diff * 0.05
         trust_change += trust_bonus 
-        
-        # Инфляция тоже разгоняется пропорционально, чтобы создать эффект "ловушки"
         inflation_growth = tax_diff * 0.012 
         st.session_state.inflation += inflation_growth
     
-    # Влияние Ставки на Инфляцию
-    if interest_rate > 2.0:
-        st.session_state.inflation -= (interest_rate - 2.0) * 0.052
-    elif interest_rate < 2.0:
-        st.session_state.inflation += (2.0 - interest_rate) * 0.0455
+    # Инфляция от Ставки
+    if interest_rate > 2.0: st.session_state.inflation -= (interest_rate - 2.0) * 0.052
+    elif interest_rate < 2.0: st.session_state.inflation += (2.0 - interest_rate) * 0.0455
 
-    # Влияние Курса на Инфляцию (Слабый франк = дорогой импорт)
-    if st.session_state.exchange_rate < 0.9:
-        st.session_state.inflation += 0.05
+    if st.session_state.exchange_rate < 0.9: st.session_state.inflation += 0.05
+    if total_spending > 60: st.session_state.inflation += (total_spending - 60) * 0.0026
 
-    # Инфляция от расходов
-    if total_spending > 60:
-        st.session_state.inflation += (total_spending - 60) * 0.0026
-
-    # Штрафы за инфляцию и безработицу
+    # Штрафы
     inflation_warning = False
     if st.session_state.inflation > 7.0:
         st.session_state.inflation += 0.2
-        # Штраф за инфляцию: чем она выше 7%, тем сильнее бьет по доверию.
-        # В итоге она перекроет любой бонус от низких налогов.
         trust_change -= (st.session_state.inflation - 7.0) * 0.2
         inflation_warning = True
     
     if st.session_state.unemployment > 5.0:
-        trust_change -= (st.session_state.unemployment - 5.0) * 0.5 # Сильный штраф
+        trust_change -= (st.session_state.unemployment - 5.0) * 0.5 
         
     st.session_state.inflation = max(0, st.session_state.inflation)
 
-    # Логика Бюджета и Щедрости
     st.session_state.active_warnings = []
     if inflation_warning: st.session_state.active_warnings.append(f"🔥 ВЫСОКАЯ ИНФЛЯЦИЯ! ({st.session_state.inflation:.1f}%)")
     if st.session_state.unemployment > 5.0: st.session_state.active_warnings.append(f"📉 БЕЗРАБОТИЦА! ({st.session_state.unemployment:.1f}%)")
@@ -320,7 +311,7 @@ else:
     trust_change += calculate_budget_impact(exp_security, 12.0, "🛡️ БУНТ!")
     trust_change += calculate_budget_impact(exp_admin, 8.0, "🏛️ ХАОС!")
 
-    # --- СОБЫТИЯ ---
+    # --- СОБЫТИЯ С ИНТЕГРАЦИЕЙ ЗВУКОВ ---
     time_since_last = time.time() - st.session_state.last_event_time
     if st.session_state.current_event:
         evt = st.session_state.current_event
@@ -330,11 +321,13 @@ else:
             if is_solved and not st.session_state.event_solved_flag:
                 st.session_state.trust_score += random.randint(3, 6)
                 st.session_state.event_solved_flag = True
+                play_sound(SOUND_TADA)
                 st.toast("Решено! +Доверие", icon="🚀")
             
             if time_since_last > 15:
                 if not is_solved:
                     st.session_state.trust_score -= random.randint(10, 16)
+                    play_sound(SOUND_FAIL)
                     st.toast("ПРОВАЛ!", icon="💥")
                 st.session_state.current_event = None
                 st.session_state.last_event_time = time.time()
@@ -348,18 +341,22 @@ else:
     elif time_since_last > random.randint(9, 16):
         if random.random() < 0.73:
             st.session_state.current_event = get_next_event("bad")
+            play_sound(SOUND_FAIL) # Звук при появлении проблемы
         else:
             st.session_state.current_event = get_next_event("good")
             ge = st.session_state.current_event
-            if ge['effect'] == 'trust': st.session_state.trust_score += ge['val']
+            if ge['effect'] == 'trust': 
+                st.session_state.trust_score += ge['val']
+                play_sound(SOUND_TADA)
+                st.toast(f"Хорошие новости! +{ge['val']}%", icon="🎉")
             elif ge['effect'] == 'money': 
                 st.session_state.national_reserves += ge['val']
+                play_sound(SOUND_MONEY)
                 st.toast(f"Бонус: +{ge['val']} млрд", icon="💰")
         st.session_state.last_event_time = time.time()
         st.rerun()
 
     # --- ФИНАЛЬНЫЙ РАСЧЕТ БЮДЖЕТА ---
-    # Доход зависит от налога И от курса валюты (экспорт)
     export_factor = 1.0 - (st.session_state.exchange_rate - 1.0) * 0.5 
     
     global_factor = 1.0
@@ -369,7 +366,6 @@ else:
     income_rate = (10 + (tax_rate * 2.5)) * export_factor * global_factor
     balance_rate = income_rate - total_spending
     
-    # Долг
     if st.session_state.national_reserves < 0:
         debt_service = abs(st.session_state.national_reserves) * (interest_rate / 100.0) / 5.0
         st.session_state.national_reserves -= debt_service
@@ -380,7 +376,7 @@ else:
     st.session_state.trust_score += trust_change
     st.session_state.trust_score = max(min(st.session_state.trust_score, 100), 0)
 
-    # --- GAME OVER ---
+    # --- GAME OVER TRIGGERS ---
     if st.session_state.trust_score < 30:
         st.session_state.game_result = "lose"
         st.session_state.fail_reason = "Революция! Доверие < 30%."
@@ -417,7 +413,7 @@ else:
 
     st.divider()
 
-    # Метрики: 4 Колонки
+    # Метрики
     m1, m2, m3, m4 = st.columns(4)
     with m1:
         ic = "#e74c3c" if st.session_state.inflation > 7.0 else "#2C3E50"
